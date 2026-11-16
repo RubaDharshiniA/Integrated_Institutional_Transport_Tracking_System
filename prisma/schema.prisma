@@ -1,0 +1,335 @@
+// Prisma Schema for Integrated Institutional Transport Tracking System (IITTS)
+// Supports PostgreSQL (production) with full relational models
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  admin
+  manager
+  driver
+  student
+}
+
+enum UserStatus {
+  active
+  inactive
+  suspended
+}
+
+enum VehicleStatus {
+  active
+  maintenance
+  out_of_service
+}
+
+enum TripStatus {
+  scheduled
+  in_progress
+  completed
+  delayed
+  cancelled
+}
+
+enum AllocationStatus {
+  approved
+  pending
+  rejected
+  cancelled
+}
+
+enum PassStatus {
+  active
+  expired
+  suspended
+}
+
+model User {
+  id              Int       @id @default(autoincrement())
+  name            String
+  email           String    @unique
+  passwordHash    String    @map("password_hash")
+  role            Role
+  phone           String?
+  department      String?
+  rollOrEmpId     String?   @map("roll_or_emp_id")
+  status          UserStatus @default(active)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  driver          Driver?
+  allocations     StudentAllocation[]
+  busPasses       BusPass[]
+  attendanceLogs  AttendanceLog[]
+  absenceRequests AbsenceRequest[]
+  incidents       Incident[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+
+  @@map("users")
+}
+
+model Vehicle {
+  id                Int           @id @default(autoincrement())
+  busNumber         String        @unique @map("bus_number")
+  registrationPlate String        @unique @map("registration_plate")
+  capacity          Int
+  model             String
+  fuelType          String?       @default("Diesel") @map("fuel_type")
+  status            VehicleStatus @default(active)
+  fitnessExpiry     DateTime?     @map("fitness_expiry")
+  insuranceExpiry   DateTime?     @map("insurance_expiry")
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  drivers           Driver[]
+  routes            Route[]
+  trips             Trip[]
+  allocations       StudentAllocation[]
+  maintenanceLogs   MaintenanceLog[]
+
+  @@map("vehicles")
+}
+
+model Driver {
+  id                Int       @id @default(autoincrement())
+  userId            Int       @unique @map("user_id")
+  licenseNumber     String    @unique @map("license_number")
+  licenseExpiry     DateTime? @map("license_expiry")
+  experienceYears   Int?      @default(0) @map("experience_years")
+  assignedVehicleId Int?      @map("assigned_vehicle_id")
+  shift             String?   @default("morning")
+  status            String?   @default("available")
+  emergencyContact  String?   @map("emergency_contact")
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedVehicle   Vehicle?  @relation(fields: [assignedVehicleId], references: [id], onDelete: SetNull)
+  routes            Route[]
+  trips             Trip[]
+
+  @@map("drivers")
+}
+
+model Route {
+  id                    Int       @id @default(autoincrement())
+  routeName             String    @map("route_name")
+  routeCode             String    @unique @map("route_code")
+  startLocation         String    @map("start_location")
+  endLocation           String    @map("end_location")
+  totalDistanceKm       Float?    @default(0.0) @map("total_distance_km")
+  estimatedDurationMins Int?      @default(45) @map("estimated_duration_mins")
+  defaultVehicleId      Int?      @map("default_vehicle_id")
+  defaultDriverId       Int?      @map("default_driver_id")
+  status                String?   @default("active")
+  createdAt             DateTime  @default(now()) @map("created_at")
+
+  defaultVehicle        Vehicle?  @relation(fields: [defaultVehicleId], references: [id], onDelete: SetNull)
+  defaultDriver         Driver?   @relation(fields: [defaultDriverId], references: [id], onDelete: SetNull)
+  stops                 RouteStop[]
+  trips                 Trip[]
+  allocations           StudentAllocation[]
+  notifications         Notification[]
+
+  @@map("routes")
+}
+
+model RouteStop {
+  id                 Int       @id @default(autoincrement())
+  routeId            Int       @map("route_id")
+  stopName           String    @map("stop_name")
+  stopOrder          Int       @map("stop_order")
+  latitude           Float
+  longitude          Float
+  morningPickupTime  String?   @map("morning_pickup_time")
+  eveningDropTime    String?   @map("evening_drop_time")
+
+  route              Route     @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  pickupAllocations  StudentAllocation[] @relation("PickupStop")
+  dropAllocations    StudentAllocation[] @relation("DropStop")
+  attendanceLogs     AttendanceLog[]
+
+  @@unique([routeId, stopOrder])
+  @@map("route_stops")
+}
+
+model Trip {
+  id                Int         @id @default(autoincrement())
+  tripCode          String      @unique @map("trip_code")
+  routeId           Int         @map("route_id")
+  vehicleId         Int         @map("vehicle_id")
+  driverId          Int         @map("driver_id")
+  tripType          String      @map("trip_type")
+  tripDate          DateTime    @map("trip_date")
+  status            TripStatus  @default(scheduled)
+  startTime         DateTime?   @map("start_time")
+  endTime           DateTime?   @map("end_time")
+  currentStopOrder  Int?        @default(0) @map("current_stop_order")
+  notes             String?
+  createdAt         DateTime    @default(now()) @map("created_at")
+
+  route             Route       @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  vehicle           Vehicle     @relation(fields: [vehicleId], references: [id])
+  driver            Driver      @relation(fields: [driverId], references: [id])
+  locations         TripLocation[]
+  attendanceLogs    AttendanceLog[]
+  incidents         Incident[]
+
+  @@map("trips")
+}
+
+model TripLocation {
+  id           Int      @id @default(autoincrement())
+  tripId       Int      @map("trip_id")
+  latitude     Float
+  longitude    Float
+  speedKmh     Float?   @default(0.0) @map("speed_kmh")
+  heading      Float?   @default(0.0)
+  nextStopName String?  @map("next_stop_name")
+  timestamp    DateTime @default(now())
+
+  trip         Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@map("trip_locations")
+}
+
+model StudentAllocation {
+  id               Int              @id @default(autoincrement())
+  studentId        Int              @map("student_id")
+  routeId          Int              @map("route_id")
+  vehicleId        Int              @map("vehicle_id")
+  pickupStopId     Int              @map("pickup_stop_id")
+  dropStopId       Int?             @map("drop_stop_id")
+  seatNumber       String?          @map("seat_number")
+  allocationStatus AllocationStatus @default(approved) @map("allocation_status")
+  allocatedAt      DateTime         @default(now()) @map("allocated_at")
+
+  student          User             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  route            Route            @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  vehicle          Vehicle          @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  pickupStop       RouteStop        @relation("PickupStop", fields: [pickupStopId], references: [id])
+  dropStop         RouteStop?       @relation("DropStop", fields: [dropStopId], references: [id])
+  busPasses        BusPass[]
+
+  @@unique([studentId, allocationStatus])
+  @@map("student_allocations")
+}
+
+model BusPass {
+  id           Int        @id @default(autoincrement())
+  studentId    Int        @map("student_id")
+  allocationId Int        @map("allocation_id")
+  passNumber   String     @unique @map("pass_number")
+  qrCodeToken  String     @map("qr_code_token")
+  validFrom    DateTime   @map("valid_from")
+  validUntil   DateTime   @map("valid_until")
+  status       PassStatus @default(active)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  student      User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  allocation   StudentAllocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
+
+  @@map("bus_passes")
+}
+
+model AttendanceLog {
+  id               Int       @id @default(autoincrement())
+  tripId           Int       @map("trip_id")
+  studentId        Int       @map("student_id")
+  stopId           Int?      @map("stop_id")
+  type             String?   @default("boarded")
+  timestamp        DateTime  @default(now())
+  verifiedByDriver Boolean?  @default(true) @map("verified_by_driver")
+
+  trip             Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  student          User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  stop             RouteStop? @relation(fields: [stopId], references: [id])
+
+  @@map("attendance_logs")
+}
+
+model AbsenceRequest {
+  id          Int      @id @default(autoincrement())
+  studentId   Int      @map("student_id")
+  absenceDate DateTime @map("absence_date")
+  tripType    String?  @default("both") @map("trip_type")
+  reason      String?
+  status      String?  @default("notified")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("absence_requests")
+}
+
+model Incident {
+  id              Int       @id @default(autoincrement())
+  tripId          Int?      @map("trip_id")
+  reportedBy      Int       @map("reported_by")
+  incidentType    String    @map("incident_type")
+  severity        String?   @default("medium")
+  description     String
+  status          String?   @default("open")
+  resolutionNotes String?   @map("resolution_notes")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  resolvedAt      DateTime? @map("resolved_at")
+
+  trip            Trip?     @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  reporter        User      @relation(fields: [reportedBy], references: [id])
+
+  @@map("incidents")
+}
+
+model MaintenanceLog {
+  id             Int       @id @default(autoincrement())
+  vehicleId      Int       @map("vehicle_id")
+  serviceDate    DateTime  @map("service_date")
+  serviceType    String    @map("service_type")
+  cost           Float?    @default(0.0)
+  description    String?
+  performedBy    String?   @map("performed_by")
+  nextServiceDue DateTime? @map("next_service_due")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  vehicle        Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@map("maintenance_logs")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?     @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  details    String?
+  ipAddress  String?  @map("ip_address")
+  timestamp  DateTime @default(now())
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model Notification {
+  id         Int      @id @default(autoincrement())
+  userId     Int?     @map("user_id")
+  targetRole String?  @default("all") @map("target_role")
+  routeId    Int?     @map("route_id")
+  category   String   @default("announcement")
+  title      String
+  message    String
+  priority   String?  @default("medium")
+  isRead     Boolean? @default(false) @map("is_read")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  route      Route?   @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+

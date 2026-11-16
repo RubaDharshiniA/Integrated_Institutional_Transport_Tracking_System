@@ -1,0 +1,25 @@
+{
+  "name": "institutional-transport-tracking-system",
+  "version": "1.0.0",
+  "description": "Integrated Institutional Transport Tracking System with RBAC, Fleet Management, Live GPS Tracking, and Student Pass Allocations",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "migrate": "node server/scripts/migrate.js",
+    "seed": "node server/scripts/seed.js",
+    "test": "node server/tests/run-tests.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
+  }
+}
